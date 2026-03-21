@@ -15,6 +15,11 @@ redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses
 
 async def process_job(job: dict):
     """Call llama-server, stream tokens to Redis pub/sub channel."""
+    job_id = job.get("job_id")
+    if job_id and await redis_client.exists(f"cancelled:{job_id}"):
+        print(f"[worker] skipping cancelled job {job_id}")
+        return
+
     session_id = job["session_id"]
     prompt     = job["prompt"]
     channel    = f"response:{session_id}"

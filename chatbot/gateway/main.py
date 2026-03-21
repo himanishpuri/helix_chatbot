@@ -1,10 +1,11 @@
 # gateway/main.py
 import os
 import json
+import uuid
 import asyncio
 import chromadb
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
@@ -67,13 +68,14 @@ async def stream_from_cache(cached_response: str):
     yield "data: [DONE]\n\n"
 
 
-async def stream_from_queue(session_id: str, embedding: list, prompt: str):
+async def stream_from_queue(session_id: str, embedding: list, prompt: str,
+                            request: Request, job_id: str):
     """Push job to queue, subscribe to response channel, stream tokens."""
     channel = f"response:{session_id}"
     full_response = []
 
     # Push job to queue
-    job = {"session_id": session_id, "prompt": prompt}
+    job = {"session_id": session_id, "prompt": prompt, "job_id": job_id}
     await redis_client.lpush(QUEUE_KEY, json.dumps(job))
 
     # Subscribe to response channel
@@ -82,6 +84,10 @@ async def stream_from_queue(session_id: str, embedding: list, prompt: str):
 
     try:
         async for message in pubsub.listen():
+            if await request.is_disconnected():
+                await redis_client.set(f"cancelled:{job_id}", "1", ex=60)
+                break
+
             if message["type"] != "message":
                 continue
 
@@ -90,7 +96,7 @@ async def stream_from_queue(session_id: str, embedding: list, prompt: str):
             if data == "[DONE]":
                 yield "data: [DONE]\n\n"
                 # Cache the full response
-                set_cache(embedding, "".join(full_response))
+                await set_cache(redis_client, embedding, "".join(full_response))
                 break
 
             try:
@@ -110,12 +116,12 @@ async def stream_from_queue(session_id: str, embedding: list, prompt: str):
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     # 1. Embed query
     embedding = embedder.encode([req.query]).tolist()[0]
 
     # 2. Semantic cache check
-    cached = get_cached(embedding)
+    cached = await get_cached(redis_client, embedding)
     if cached:
         print(f"[cache HIT] '{req.query}'")
         return StreamingResponse(
@@ -131,8 +137,9 @@ async def chat(req: ChatRequest):
     prompt  = build_prompt(req.query, context)
 
     # 4. Queue + stream response
+    job_id = str(uuid.uuid4())
     return StreamingResponse(
-        stream_from_queue(req.session_id, embedding, prompt),
+        stream_from_queue(req.session_id, embedding, prompt, request, job_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
