@@ -1,5 +1,5 @@
 llama.cpp/
 .claude
 CLAUDE.md
-__pycache__
+__pycache__/
 chatbot/data

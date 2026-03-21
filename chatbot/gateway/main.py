@@ -12,7 +12,7 @@ from sentence_transformers import SentenceTransformer
 from cache import get_cached, set_cache
 
 # ── Config ────────────────────────────────────────────────────
-CHROMA_PATH  = os.path.join(os.path.dirname(__file__), "../data/chroma_db")
+CHROMA_PATH  = os.getenv("CHROMA_PATH", os.path.join(os.path.dirname(__file__), "../data/chroma_db"))
 COLLECTION   = "college_kb"
 QUEUE_KEY    = "inference_queue"
 COLLEGE_NAME = "ABC Institute of Technology"  # change this
@@ -41,9 +41,12 @@ class ChatRequest(BaseModel):
     session_id: str = ""  # auto-generate if empty
 
 
-def retrieve_context(query: str) -> str:
-    embedding = embedder.encode([query]).tolist()
-    results   = collection.query(query_embeddings=embedding, n_results=TOP_K_CHUNKS)
+async def retrieve_context(embedding: list[float]) -> str:
+    results = await asyncio.to_thread(
+        collection.query,
+        query_embeddings=[embedding],
+        n_results=TOP_K_CHUNKS,
+    )
     return "\n\n".join(results["documents"][0])
 
 
@@ -75,8 +78,9 @@ async def chat(req: ChatRequest, request: Request):
     # Auto-generate unique session_id to prevent channel collisions
     session_id = req.session_id if req.session_id else str(uuid.uuid4())
 
-    # 1. Embed query
-    embedding = embedder.encode([req.query]).tolist()[0]
+    # 1. Embed query (thread pool — CPU-bound, must not block event loop)
+    raw       = await asyncio.to_thread(embedder.encode, [req.query])
+    embedding = raw.tolist()[0]
 
     # 2. Semantic cache check
     cached = await get_cached(embedding)
@@ -91,7 +95,7 @@ async def chat(req: ChatRequest, request: Request):
     print(f"[cache MISS] '{req.query}' — queuing for inference")
 
     # 3. RAG retrieval + prompt
-    context = retrieve_context(req.query)
+    context = await retrieve_context(embedding)
     prompt  = build_prompt(req.query, context)
 
     # 4. Push job to queue

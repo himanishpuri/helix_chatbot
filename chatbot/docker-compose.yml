@@ -22,8 +22,9 @@ services:
     environment:
       - REDIS_HOST=redis
       - LLAMA_URL=http://host.docker.internal:8080/completion
+      - CHROMA_PATH=/app/data/chroma_db
     volumes:
-      - ./data:/app/data:ro
+      - ./data:/app/data
     deploy:
       replicas: 3
 
@@ -39,7 +40,7 @@ services:
       - REDIS_HOST=redis
       - LLAMA_URL=http://host.docker.internal:8080/completion
     volumes:
-      - ./data:/app/data:ro
+      - ./data:/app/data
     command: python worker.py
 
   nginx:
