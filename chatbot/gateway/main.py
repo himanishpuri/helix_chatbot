@@ -5,7 +5,7 @@ import uuid
 import asyncio
 import chromadb
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sentence_transformers import SentenceTransformer
@@ -71,7 +71,7 @@ async def stream_from_cache(cached_response: str):
 
 
 @app.post("/chat")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
     # Auto-generate unique session_id to prevent channel collisions
     session_id = req.session_id if req.session_id else str(uuid.uuid4())
 
@@ -79,7 +79,7 @@ async def chat(req: ChatRequest):
     embedding = embedder.encode([req.query]).tolist()[0]
 
     # 2. Semantic cache check
-    cached = get_cached(embedding)
+    cached = await get_cached(embedding)
     if cached:
         print(f"[cache HIT] '{req.query}'")
         return StreamingResponse(
@@ -106,12 +106,15 @@ async def chat(req: ChatRequest):
         await pubsub.subscribe(channel)
         try:
             async for message in pubsub.listen():
+                if await request.is_disconnected():
+                    print(f"[disconnect] client left session={session_id}")
+                    break
                 if message["type"] != "message":
                     continue
                 data = message["data"]
                 if data == "[DONE]":
                     # Cache BEFORE closing — this was the bug
-                    set_cache(embedding, "".join(full_response))
+                    await set_cache(embedding, "".join(full_response))
                     print(f"[cache SET] '{req.query}' — {len(full_response)} tokens cached")
                     yield "data: [DONE]\n\n"
                     break

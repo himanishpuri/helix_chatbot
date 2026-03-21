@@ -24,8 +24,8 @@ services:
       - LLAMA_URL=http://host.docker.internal:8080/completion
     volumes:
       - ./data:/app/data:ro
-    ports:
-      - "8000:8000"
+    deploy:
+      replicas: 3
 
   worker:
     build:

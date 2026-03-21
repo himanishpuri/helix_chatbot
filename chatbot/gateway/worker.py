@@ -1,13 +1,14 @@
 # gateway/worker.py
+import os
 import asyncio
 import json
 import httpx
 import redis.asyncio as aioredis
 
-REDIS_HOST = "localhost"
-REDIS_PORT = 6379
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 QUEUE_KEY  = "inference_queue"
-LLAMA_URL  = "http://localhost:8080/completion"
+LLAMA_URL  = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
 NUM_WORKERS = 8
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
