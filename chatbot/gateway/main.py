@@ -96,9 +96,11 @@ async def stream_from_queue(session_id: str, embedding: list, prompt: str,
             data = message["data"]
 
             if data == "[DONE]":
-                yield "data: [DONE]\n\n"
-                # Cache the full response
+                # Cache before yielding — prevents set_cache being skipped
+                # if Starlette closes the generator after the client disconnects
+                # on receipt of [DONE].
                 await set_cache(redis_client, embedding, "".join(full_response))
+                yield "data: [DONE]\n\n"
                 break
 
             try:
@@ -124,7 +126,7 @@ async def chat(req: ChatRequest, request: Request):
 
     # 2. Semantic cache check
     cached = await get_cached(redis_client, embedding)
-    if cached:
+    if cached is not None:
         print(f"[cache HIT] '{req.query}'")
         return StreamingResponse(
             stream_from_cache(cached),

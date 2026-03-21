@@ -47,8 +47,15 @@ async def process_job(job: dict):
                             token = data.get("content", "")
                             if token:
                                 await redis_client.publish(channel, json.dumps({"token": token}))
+                            # llama.cpp signals end-of-generation with "stop": true
+                            # rather than a data: [DONE] line
+                            if data.get("stop", False):
+                                await redis_client.publish(channel, "[DONE]")
+                                return
                         except json.JSONDecodeError:
                             continue
+        # Fallback: stream closed without any explicit stop signal
+        await redis_client.publish(channel, "[DONE]")
     except Exception as e:
         await redis_client.publish(channel, json.dumps({"error": str(e)}))
         await redis_client.publish(channel, "[DONE]")
