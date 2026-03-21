@@ -12,6 +12,7 @@ from sentence_transformers import SentenceTransformer
 from cache import get_cached, set_cache
 
 # ── Config ────────────────────────────────────────────────────
+REDIS_HOST   = os.getenv("REDIS_HOST", "localhost")
 CHROMA_PATH  = os.path.join(os.path.dirname(__file__), "../data/chroma_db")
 COLLECTION   = "college_kb"
 QUEUE_KEY    = "inference_queue"
@@ -29,7 +30,7 @@ chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
 collection = chroma_client.get_collection(COLLECTION)
 
 print("[startup] Connecting to Redis...")
-redis_client = aioredis.Redis(host="localhost", port=6379, decode_responses=True)
+redis_client = aioredis.Redis(host=REDIS_HOST, port=6379, decode_responses=True)
 
 print("[startup] Ready.")
 
@@ -74,13 +75,14 @@ async def stream_from_queue(session_id: str, embedding: list, prompt: str,
     channel = f"response:{session_id}"
     full_response = []
 
+    # Subscribe to response channel BEFORE enqueuing, to avoid the race
+    # condition where a fast worker publishes [DONE] before we're listening.
+    pubsub = redis_client.pubsub()
+    await pubsub.subscribe(channel)
+
     # Push job to queue
     job = {"session_id": session_id, "prompt": prompt, "job_id": job_id}
     await redis_client.lpush(QUEUE_KEY, json.dumps(job))
-
-    # Subscribe to response channel
-    pubsub = redis_client.pubsub()
-    await pubsub.subscribe(channel)
 
     try:
         async for message in pubsub.listen():
