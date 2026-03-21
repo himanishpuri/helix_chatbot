@@ -1,14 +1,13 @@
 # gateway/worker.py
-import os
 import asyncio
 import json
 import httpx
 import redis.asyncio as aioredis
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_HOST = "localhost"
 REDIS_PORT = 6379
 QUEUE_KEY  = "inference_queue"
-LLAMA_URL  = os.getenv("LLAMA_URL",  "http://localhost:8080/completion")
+LLAMA_URL  = "http://localhost:8080/completion"
 NUM_WORKERS = 8
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -16,11 +15,6 @@ redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses
 
 async def process_job(job: dict):
     """Call llama-server, stream tokens to Redis pub/sub channel."""
-    job_id = job.get("job_id")
-    if job_id and await redis_client.exists(f"cancelled:{job_id}"):
-        print(f"[worker] skipping cancelled job {job_id}")
-        return
-
     session_id = job["session_id"]
     prompt     = job["prompt"]
     channel    = f"response:{session_id}"
@@ -47,15 +41,8 @@ async def process_job(job: dict):
                             token = data.get("content", "")
                             if token:
                                 await redis_client.publish(channel, json.dumps({"token": token}))
-                            # llama.cpp signals end-of-generation with "stop": true
-                            # rather than a data: [DONE] line
-                            if data.get("stop", False):
-                                await redis_client.publish(channel, "[DONE]")
-                                return
                         except json.JSONDecodeError:
                             continue
-        # Fallback: stream closed without any explicit stop signal
-        await redis_client.publish(channel, "[DONE]")
     except Exception as e:
         await redis_client.publish(channel, json.dumps({"error": str(e)}))
         await redis_client.publish(channel, "[DONE]")
