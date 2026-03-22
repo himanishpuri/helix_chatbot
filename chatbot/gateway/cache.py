@@ -6,9 +6,9 @@ import numpy as np
 import redis.asyncio as aioredis
 
 # ── Config ────────────────────────────────────────────────────
-REDIS_HOST           = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT           = int(os.getenv("REDIS_PORT", "6379"))
-CACHE_TTL            = 7 * 24 * 60 * 60  # 7 days in seconds
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+CACHE_TTL = 7 * 24 * 60 * 60  # 7 days in seconds
 SIMILARITY_THRESHOLD = 0.92
 # ─────────────────────────────────────────────────────────────
 
@@ -50,8 +50,11 @@ async def set_cache(query_embedding: list[float], response_text: str) -> None:
     """Store embedding + response in Redis."""
     r = get_redis()
     key = f"cache:{uuid.uuid4()}"
-    await r.hset(key, mapping={
-        "embedding": json.dumps(query_embedding),
-        "response":  response_text,
-    })
+    await r.hset(
+        key,
+        mapping={
+            "embedding": json.dumps(query_embedding),
+            "response": response_text,
+        },
+    )
     await r.expire(key, CACHE_TTL)

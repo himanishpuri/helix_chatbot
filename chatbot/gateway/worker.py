@@ -7,8 +7,8 @@ import redis.asyncio as aioredis
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-QUEUE_KEY  = "inference_queue"
-LLAMA_URL  = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
+QUEUE_KEY = "inference_queue"
+LLAMA_URL = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
 NUM_WORKERS = 8
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
@@ -17,15 +17,15 @@ redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses
 async def process_job(job: dict):
     """Call llama-server, stream tokens to Redis pub/sub channel."""
     session_id = job["session_id"]
-    prompt     = job["prompt"]
-    channel    = f"response:{session_id}"
+    prompt = job["prompt"]
+    channel = f"response:{session_id}"
 
     payload = {
         "prompt": prompt,
         "n_predict": 512,
         "stream": True,
         "temperature": 0.2,
-        "stop": ["<|end|>", "<|user|>"]
+        "stop": ["<|end|>", "<|user|>"],
     }
 
     try:
@@ -38,10 +38,12 @@ async def process_job(job: dict):
                             await redis_client.publish(channel, "[DONE]")
                             return
                         try:
-                            data  = json.loads(raw)
+                            data = json.loads(raw)
                             token = data.get("content", "")
                             if token:
-                                await redis_client.publish(channel, json.dumps({"token": token}))
+                                await redis_client.publish(
+                                    channel, json.dumps({"token": token})
+                                )
                         except json.JSONDecodeError:
                             continue
     except Exception as e:
