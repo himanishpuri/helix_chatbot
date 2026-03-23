@@ -1,76 +1,207 @@
-# 🎓 College Information
+## Event Overview
 
-## 📌 Basic Details
-- **College Name:** ABC Institute of Technology
-- **Location:** Punjab, India
-- **Established:** 2005
-- **Affiliation:** XYZ University
-- **Accreditation:** NAAC A Grade
+* **Event Name:** HELIX
+* **Type:** Annual Technical Festival
+* **Host Institution:** Thapar Institute of Engineering & Technology (TIET)
+* **Location:** Patiala, Punjab, India
+* **Organized By:** Student technical societies of TIET
+* **Audience:** College students (primarily engineering), developers, innovators
+* **Format:** Multi-day on-campus technical festival
 
----
-
-## 👨‍🎓 Courses Offered
-
-### Undergraduate Programs
-- B.Tech (Computer Science)
-- B.Tech (Mechanical Engineering)
-- BBA (Bachelor of Business Administration)
-- BCA (Bachelor of Computer Applications)
-
-### Postgraduate Programs
-- M.Tech (Computer Science)
-- MBA (Master of Business Administration)
+HELIX is the flagship technical festival at TIET focused on engineering, coding, AI, robotics, and innovation-driven competitions.
 
 ---
 
-## 🏫 Departments
-| Department Name        | Head of Department | Contact Email             |
-|----------------------|------------------|--------------------------|
-| Computer Science     | Dr. Rajesh Kumar | cs@abc.edu               |
-| Mechanical Engineering | Dr. Aman Singh   | mech@abc.edu             |
-| Management Studies   | Dr. Neha Sharma  | mba@abc.edu              |
+## HELIX 2026 Details
+
+* **Dates:** 17–19 April 2026
+* **Mode:** Offline (Campus Event)
+* **Duration:** 3 Days
+* **Participants:** Students from TIET and external colleges
+* **Event Types:** Competitions, hackathons, workshops, talks
 
 ---
 
-## 👩‍🏫 Faculty Details
-- **Total Faculty:** 120
-- **PhD Holders:** 45
-- **Guest Faculty:** 20
+## Major Event Categories
+
+HELIX typically consists of the following categories:
+
+### Coding & Software
+
+* Competitive programming contests
+* Algorithmic challenges
+* Debugging contests
+* Web/app development competitions
+
+### AI / Machine Learning
+
+* ML model competitions
+* Data science challenges
+* Kaggle-style events
+* AI hackathons
+
+### Hackathons
+
+* 24-hour hackathons
+* Product-building competitions
+* Theme-based innovation challenges
+
+### Robotics & Hardware
+
+* Robotics competitions
+* Embedded systems challenges
+* Hardware prototyping contests
+
+### Workshops
+
+* AI / ML workshops
+* Web development sessions
+* Cloud computing sessions
+* DevOps workshops
+
+### Speaker Sessions
+
+* Industry expert talks
+* Startup founders
+* Engineering leaders
+* Technical deep dives
 
 ---
 
-## 🧑‍🎓 Student Statistics
-- **Total Students:** 2500
-- **Boys:** 1500
-- **Girls:** 1000
-- **International Students:** 50
+## Example Events (HELIX)
+
+Typical events under HELIX include:
+
+* Obscura (flagship technical challenge)
+* Vortex (AI/ML competition)
+* Competitive Programming Contest
+* Hackathon (24-hour)
+* Robotics Arena
+* Debugging Challenge
+* UI/UX Design Contest
+* Capture The Flag (CTF)
 
 ---
 
-## 🏢 Facilities
-- 📚 Library (50,000+ books)
-- 🧪 Laboratories
-- 🏋️ Sports Complex
-- 🛏️ Hostel (Boys & Girls)
-- 🍽️ Cafeteria
-- 🌐 Wi-Fi Campus
+## Flagship Event — Obscura
+
+* **Type:** Team-based technical challenge
+* **Focus:** Problem-solving + engineering tasks
+* **Format:** Multi-round competition
+* **Participants:** Student teams
+* **Duration:** Several rounds across event days
 
 ---
 
-## 📊 Placement Data (2025)
-| Company Name     | Students Placed | Highest Package |
-|-----------------|---------------|-----------------|
-| Infosys         | 120           | ₹10 LPA         |
-| TCS             | 150           | ₹8 LPA          |
-| Wipro           | 90            | ₹7 LPA          |
+## Registration
 
-- **Overall Placement Rate:** 85%
-- **Average Package:** ₹5 LPA
+* Registration is typically done through:
+
+  * Official HELIX website
+  * Google Forms
+  * Society portals
+  * QR-based campus registration
+
+Registration fields usually include:
+
+* Name
+* College
+* Email
+* Phone
+* Team members
+* Event selection
 
 ---
 
-## 📞 Contact Information
-- **Website:** https://www.abccollege.edu
-- **Email:** info@abccollege.edu
-- **Phone:** +91-9876543210
+## Prize Pools
 
+Typical prize distribution structure:
+
+* Hackathon: ₹30,000 – ₹1,00,000 total
+* Flagship events: ₹20,000 – ₹50,000
+* Coding contests: ₹5,000 – ₹20,000
+* Robotics events: ₹10,000 – ₹30,000
+* Merchandise and goodies for winners
+
+---
+
+## Sponsors (Typical Categories)
+
+HELIX generally partners with:
+
+### Tech Sponsors
+
+* Developer platforms
+* Cloud providers
+* AI companies
+
+### Hiring Sponsors
+
+* Startups
+* Product companies
+* Consulting firms
+
+### Community Sponsors
+
+* Developer communities
+* Tech clubs
+* Student networks
+
+### Platform Sponsors
+
+* Coding platforms
+* ML competition hosts
+* Hackathon platforms
+
+---
+
+## Organizing Structure
+
+HELIX is managed by:
+
+* Core Organizing Team
+* Event Leads
+* Technical Team
+* Design Team
+* Sponsorship Team
+* Operations Team
+* Volunteer Team
+
+---
+
+## Venue Information
+
+Events typically take place at:
+
+* Academic Blocks
+* Computer Labs
+* Seminar Halls
+* Auditorium
+* Open Grounds (for robotics)
+* Innovation Center
+
+---
+
+## Participation Eligibility
+
+* Undergraduate students
+* Postgraduate students
+* External college participants
+* Individual and team participation allowed
+* Team size varies by event (typically 2–4 members)
+
+---
+
+## Contact Information
+
+* Official Instagram: helix.tiet
+* Host Institution: Thapar Institute of Engineering & Technology
+* Location: Patiala, Punjab
+* Mode of communication:
+
+  * Instagram announcements
+  * WhatsApp groups
+  * Email (event-specific)
+  * Registration portals
+
+---

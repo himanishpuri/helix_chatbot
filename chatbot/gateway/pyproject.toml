@@ -1,0 +1,18 @@
+[project]
+name = "gateway"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "httpx",
+    "chromadb",
+    "sentence-transformers",
+    "redis",
+    "numpy",
+    "sse-starlette",
+    "black>=26.3.1",
+]
+
+[tool.uv]
+package = false

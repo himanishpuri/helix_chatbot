@@ -1,5 +1,4 @@
 services:
-
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -10,7 +9,6 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
-
   gateway:
     build:
       context: ./gateway
@@ -25,8 +23,9 @@ services:
       - CHROMA_PATH=/app/data/chroma_db
     volumes:
       - ./data:/app/data
-    deploy:
-      replicas: 3
+      # deploy:
+  # replicas: 3 # not needed rn
+  # uncomment these when we need to scale this is taking too much time to build
 
   worker:
     build:
@@ -42,7 +41,6 @@ services:
     volumes:
       - ./data:/app/data
     command: python worker.py
-
   nginx:
     image: nginx:alpine
     restart: unless-stopped
@@ -53,6 +51,5 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
-
 volumes:
   redis_data:

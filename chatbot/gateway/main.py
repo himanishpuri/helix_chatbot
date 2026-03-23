@@ -12,13 +12,15 @@ from sentence_transformers import SentenceTransformer
 from cache import get_cached, set_cache
 
 # ── Config ────────────────────────────────────────────────────
-CHROMA_PATH  = os.getenv("CHROMA_PATH", os.path.join(os.path.dirname(__file__), "../data/chroma_db"))
-COLLECTION   = "college_kb"
-QUEUE_KEY    = "inference_queue"
+CHROMA_PATH = os.getenv(
+    "CHROMA_PATH", os.path.join(os.path.dirname(__file__), "../data/chroma_db")
+)
+COLLECTION = "college_kb"
+QUEUE_KEY = "inference_queue"
 COLLEGE_NAME = "ABC Institute of Technology"  # change this
 TOP_K_CHUNKS = 3
-REDIS_HOST   = os.getenv("REDIS_HOST", "localhost")
-LLAMA_URL    = os.getenv("LLAMA_URL",  "http://localhost:8080/completion")
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+LLAMA_URL = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
 # ─────────────────────────────────────────────────────────────
 
 app = FastAPI()
@@ -79,7 +81,7 @@ async def chat(req: ChatRequest, request: Request):
     session_id = req.session_id if req.session_id else str(uuid.uuid4())
 
     # 1. Embed query (thread pool — CPU-bound, must not block event loop)
-    raw       = await asyncio.to_thread(embedder.encode, [req.query])
+    raw = await asyncio.to_thread(embedder.encode, [req.query])
     embedding = raw.tolist()[0]
 
     # 2. Semantic cache check
@@ -89,14 +91,14 @@ async def chat(req: ChatRequest, request: Request):
         return StreamingResponse(
             stream_from_cache(cached),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
     print(f"[cache MISS] '{req.query}' — queuing for inference")
 
     # 3. RAG retrieval + prompt
     context = await retrieve_context(embedding)
-    prompt  = build_prompt(req.query, context)
+    prompt = build_prompt(req.query, context)
 
     # 4. Push job to queue
     channel = f"response:{session_id}"
@@ -119,7 +121,9 @@ async def chat(req: ChatRequest, request: Request):
                 if data == "[DONE]":
                     # Cache BEFORE closing — this was the bug
                     await set_cache(embedding, "".join(full_response))
-                    print(f"[cache SET] '{req.query}' — {len(full_response)} tokens cached")
+                    print(
+                        f"[cache SET] '{req.query}' — {len(full_response)} tokens cached"
+                    )
                     yield "data: [DONE]\n\n"
                     break
                 try:
@@ -140,7 +144,7 @@ async def chat(req: ChatRequest, request: Request):
     return StreamingResponse(
         stream_collect_cache(),
         media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
