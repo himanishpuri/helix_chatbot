@@ -4,6 +4,7 @@ import asyncio
 import json
 import httpx
 import redis.asyncio as aioredis
+from templates import get_preset
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
@@ -11,6 +12,7 @@ QUEUE_KEY = "inference_queue"
 LLAMA_URL = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
 NUM_WORKERS = 8
 CANCEL_CHECK_EVERY = 8  # tokens between cancel-flag checks
+STOP_TOKENS = get_preset(os.getenv("MODEL_PRESET", "phi3"))["stop"]
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
@@ -32,7 +34,7 @@ async def process_job(job: dict):
         "n_predict": 512,
         "stream": True,
         "temperature": 0.2,
-        "stop": ["<|end|>", "<|user|>"],
+        "stop": STOP_TOKENS,
     }
 
     try:

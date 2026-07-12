@@ -7,6 +7,8 @@ CHROMA_PATH = os.getenv(
     "CHROMA_PATH", os.path.join(os.path.dirname(__file__), "../data/chroma_db")
 )
 COLLECTION = "college_kb"
+# Must match the gateway's EMBED_MODEL — same model + dims or similarity breaks.
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 100
@@ -61,7 +63,8 @@ def main():
 
     chunks = chunk_text(raw)
 
-    model = SentenceTransformer("all-MiniLM-L6-v2")
+    print(f"Embedding with {EMBED_MODEL} ...")
+    model = SentenceTransformer(EMBED_MODEL)
 
     client = chromadb.PersistentClient(path=CHROMA_PATH)
 

@@ -6,7 +6,8 @@ A RAG (Retrieval-Augmented Generation) chatbot that runs entirely on local hardw
 
 ## Features
 
-- **Retrieval-Augmented Generation** — embeds each query with `all-MiniLM-L6-v2`, retrieves the top-3 most relevant chunks from ChromaDB, and injects them into the prompt so the model answers only from verified knowledge.
+- **Retrieval-Augmented Generation** — embeds each query with `bge-small-en-v1.5` (swap via `EMBED_MODEL`), retrieves the top-3 most relevant chunks from ChromaDB, and injects them into the prompt so the model answers only from verified knowledge.
+- **Swappable model presets** — the chat template and stop tokens for the LLM live in one place (`gateway/templates.py`) keyed by family (`phi3`, `qwen`, `llama3`). Point llama.cpp at a different GGUF and match it with a one-word `MODEL_PRESET` change — no code edit.
 - **Semantic cache** — before hitting the inference stack, every query is compared against cached embeddings in Redis by cosine similarity. The closest match at ≥ 0.92 similarity returns the cached answer instantly, with its 7-day TTL refreshed on hit.
 - **Local LLM inference** — delegates generation to a llama.cpp server running on the host. No external API calls, no data leaves the machine.
 - **Async worker pool** — 8 async workers dequeue jobs from a Redis list and call llama.cpp in parallel, keeping latency low under concurrent load.
@@ -22,7 +23,7 @@ A RAG (Retrieval-Augmented Generation) chatbot that runs entirely on local hardw
 flowchart LR
     B[Browser] -->|POST /api/chat| N[Nginx :80<br/>rate limit 20r/m]
     N -->|/chat| G[FastAPI Gateway :8000]
-    G -->|embed query| E[all-MiniLM-L6-v2]
+    G -->|embed query| E[bge-small-en-v1.5]
     G <-->|semantic lookup / store| C[(Redis<br/>semantic cache)]
     G -->|top-3 chunks| V[(ChromaDB<br/>vector store)]
     G -->|lpush job| Q[(Redis list<br/>inference_queue)]
@@ -69,17 +70,17 @@ sequenceDiagram
 
 ## Tech Stack
 
-| Layer            | Technology                                         |
-| ---------------- | -------------------------------------------------- |
-| Web framework    | FastAPI + Uvicorn                                  |
-| Reverse proxy    | Nginx (Alpine)                                     |
-| Embeddings       | `sentence-transformers` — `all-MiniLM-L6-v2`       |
-| Vector store     | ChromaDB (persistent, cosine metric)               |
-| Cache & queue    | Redis 7                                            |
-| LLM inference    | llama.cpp (`llama-server`)                         |
-| HTTP client      | httpx (async)                                      |
-| Streaming        | Server-Sent Events via FastAPI `StreamingResponse` |
-| Containerisation | Docker Compose                                     |
+| Layer            | Technology                                                       |
+| ---------------- | ---------------------------------------------------------------- |
+| Web framework    | FastAPI + Uvicorn                                                |
+| Reverse proxy    | Nginx (Alpine)                                                   |
+| Embeddings       | `sentence-transformers` — `bge-small-en-v1.5` (env-configurable) |
+| Vector store     | ChromaDB (persistent, cosine metric)                             |
+| Cache & queue    | Redis 7                                                          |
+| LLM inference    | llama.cpp (`llama-server`)                                       |
+| HTTP client      | httpx (async)                                                    |
+| Streaming        | Server-Sent Events via FastAPI `StreamingResponse`               |
+| Containerisation | Docker Compose                                                   |
 
 ---
 
@@ -88,6 +89,8 @@ sequenceDiagram
 - **Redis pub/sub for streaming, not direct gateway→llama.cpp.** Decoupling the gateway from inference via a queue + pub/sub means the web tier stays responsive and stateless: workers can be scaled independently, and a slow model never ties up an HTTP worker thread. The gateway subscribes _before_ enqueuing the job so no leading tokens are lost to the pub/sub's no-backlog semantics.
 - **Semantic cache threshold of 0.92.** High enough that only genuine paraphrases hit (avoiding wrong-answer reuse), low enough to catch "what courses are offered" vs "which courses do you offer". Below it, the query goes to full RAG + inference. The cache returns the _best_ match above threshold, not the first found.
 - **Local llama.cpp inference.** Keeps student/college data on-machine, removes per-token API cost, and makes the whole stack runnable on a laptop with a single GGUF file.
+- **`bge-small-en-v1.5` embedder.** Same 384 dimensions and inference cost as the old `all-MiniLM-L6-v2` but noticeably stronger retrieval on the MTEB benchmarks. bge models are trained to embed a _query_ with a short instruction prefix (applied automatically at query time, never to the stored documents), which lifts retrieval further at zero extra cost.
+- **Model presets over hardcoded templates.** Each LLM family needs its own chat wrapper and stop sequences; keeping them together in `templates.py` means the two can't drift apart, and switching hardware (M1 → Intel, or one GGUF → another) is a single env var rather than a code change across two files.
 - **Paragraph-packed chunking with overlap.** Chunks are packed to ~`CHUNK_SIZE` on paragraph boundaries (natural semantic units), oversized paragraphs are hard-split, and each chunk carries `CHUNK_OVERLAP` trailing characters into the next so an answer spanning a chunk boundary isn't cut mid-idea. Chunk IDs are MD5 hashes of their text, so re-ingesting unchanged content is a no-op.
 
 ---
@@ -101,6 +104,31 @@ Measured numbers depend heavily on the host GPU/CPU and the chosen GGUF model, s
 - **Cancellation on disconnect** reclaims a worker within ~`CANCEL_CHECK_EVERY` (8) tokens of the client leaving.
 
 > Populate this section with real numbers from your hardware: single-query latency, tokens/sec, cache-hit latency, and throughput under N concurrent clients.
+
+---
+
+## Choosing a Model
+
+The LLM is served by llama.cpp on the host — you pick the GGUF and set the matching
+`MODEL_PRESET`. Suggested pairings by hardware:
+
+| Hardware                           | Suggested GGUF              | `MODEL_PRESET` | Notes                                                                         |
+| ---------------------------------- | --------------------------- | -------------- | ----------------------------------------------------------------------------- |
+| **Apple M1 Max** (Metal)           | Qwen2.5-7B-Instruct Q4_K_M  | `qwen`         | ~40–60 tok/s; bump `EMBED_MODEL=BAAI/bge-base-en-v1.5` for stronger retrieval |
+| M1 Max, larger                     | Qwen2.5-14B-Instruct Q4_K_M | `qwen`         | needs 32GB+ unified memory                                                    |
+| **Intel i5-1335U / Iris Xe** (CPU) | Qwen2.5-3B-Instruct Q4_K_M  | `qwen`         | ~8–15 tok/s CPU                                                               |
+| Intel, zero-config                 | Phi-3.5-mini Q4_K_M         | `phi3`         | matches the default preset                                                    |
+| Any Llama-3.x GGUF                 | Llama-3.1/3.2-Instruct      | `llama3`       | —                                                                             |
+
+Start llama.cpp, then switch preset with an env var — no rebuild of app code:
+
+```bash
+# on the Intel laptop, for example:
+MODEL_PRESET=qwen docker compose up -d
+```
+
+> Presets set the chat template + stop tokens only. Changing `EMBED_MODEL` (the retrieval
+> model) has different dimensions, so you must **re-run ingestion** after changing it.
 
 ---
 
@@ -206,25 +234,29 @@ uv run python worker.py
 
 All tunable constants live at the top of their respective files:
 
-| File                  | Constant               | Default                            | Description                                          |
-| --------------------- | ---------------------- | ---------------------------------- | ---------------------------------------------------- |
-| `gateway/main.py`     | `TOP_K_CHUNKS`         | `3`                                | Chunks retrieved from ChromaDB per query             |
-| `gateway/main.py`     | `COLLEGE_NAME`         | `ABC Institute of Technology`      | Injected into the system prompt (env `COLLEGE_NAME`) |
-| `gateway/main.py`     | `MAX_QUERY_LEN`        | `2000`                             | Max accepted query length (chars)                    |
-| `gateway/cache.py`    | `SIMILARITY_THRESHOLD` | `0.92`                             | Cosine similarity required for a cache hit           |
-| `gateway/cache.py`    | `CACHE_TTL`            | `604800`                           | Cache entry lifetime (7 days, in seconds)            |
-| `gateway/worker.py`   | `NUM_WORKERS`          | `8`                                | Parallel inference workers                           |
-| `gateway/worker.py`   | `LLAMA_URL`            | `http://localhost:8080/completion` | llama.cpp endpoint                                   |
-| `ingestion/ingest.py` | `CHUNK_SIZE`           | `500`                              | Target characters per chunk                          |
-| `ingestion/ingest.py` | `CHUNK_OVERLAP`        | `100`                              | Trailing characters carried into the next chunk      |
+| File                  | Constant               | Default                            | Description                                                                        |
+| --------------------- | ---------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| `gateway/main.py`     | `TOP_K_CHUNKS`         | `3`                                | Chunks retrieved from ChromaDB per query                                           |
+| `gateway/main.py`     | `COLLEGE_NAME`         | `ABC Institute of Technology`      | Injected into the system prompt (env `COLLEGE_NAME`)                               |
+| `gateway/main.py`     | `MAX_QUERY_LEN`        | `2000`                             | Max accepted query length (chars)                                                  |
+| `gateway/main.py`     | `MODEL_PRESET`         | `phi3`                             | LLM chat template + stop tokens (`phi3`/`qwen`/`llama3`); read by gateway + worker |
+| `gateway/main.py`     | `EMBED_MODEL`          | `BAAI/bge-small-en-v1.5`           | Embedding model; **must match** between gateway and ingestion                      |
+| `gateway/cache.py`    | `SIMILARITY_THRESHOLD` | `0.92`                             | Cosine similarity required for a cache hit                                         |
+| `gateway/cache.py`    | `CACHE_TTL`            | `604800`                           | Cache entry lifetime (7 days, in seconds)                                          |
+| `gateway/worker.py`   | `NUM_WORKERS`          | `8`                                | Parallel inference workers                                                         |
+| `gateway/worker.py`   | `LLAMA_URL`            | `http://localhost:8080/completion` | llama.cpp endpoint                                                                 |
+| `ingestion/ingest.py` | `CHUNK_SIZE`           | `500`                              | Target characters per chunk                                                        |
+| `ingestion/ingest.py` | `CHUNK_OVERLAP`        | `100`                              | Trailing characters carried into the next chunk                                    |
 
 **Docker environment variables** (set in `docker-compose.yml`):
 
-| Variable      | Value                                         | Used by         |
-| ------------- | --------------------------------------------- | --------------- |
-| `REDIS_HOST`  | `redis`                                       | gateway, worker |
-| `LLAMA_URL`   | `http://host.docker.internal:8080/completion` | gateway, worker |
-| `CHROMA_PATH` | `/app/data/chroma_db`                         | gateway         |
+| Variable       | Value                                         | Used by         |
+| -------------- | --------------------------------------------- | --------------- |
+| `REDIS_HOST`   | `redis`                                       | gateway, worker |
+| `LLAMA_URL`    | `http://host.docker.internal:8080/completion` | gateway, worker |
+| `CHROMA_PATH`  | `/app/data/chroma_db`                         | gateway, ingest |
+| `MODEL_PRESET` | `phi3`                                        | gateway, worker |
+| `EMBED_MODEL`  | `BAAI/bge-small-en-v1.5`                      | gateway, ingest |
 
 ---
 
@@ -261,7 +293,9 @@ chatbot/
 │   ├── main.py               — FastAPI app; /chat (SSE) and /health endpoints
 │   ├── cache.py              — semantic cache: scan + best-match cosine + atomic set
 │   ├── worker.py             — dequeues jobs, streams llama.cpp, publishes tokens, honours cancel
+│   ├── templates.py          — per-family chat template + stop tokens (MODEL_PRESET)
 │   ├── test_cache.py         — cache unit checks (no Redis)
+│   ├── test_templates.py     — preset template/stop checks (no services)
 │   └── Dockerfile
 ├── ingestion/
 │   ├── ingest.py             — chunks college_data.md (overlap), embeds, stores in ChromaDB

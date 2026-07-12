@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sentence_transformers import SentenceTransformer
 from cache import get_cached, set_cache
+from templates import get_preset
 
 # ── Config ────────────────────────────────────────────────────
 CHROMA_PATH = os.getenv(
@@ -25,12 +26,24 @@ CANCEL_TTL = 60  # seconds a cancel flag lives
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 LLAMA_URL = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
+MODEL_PRESET = os.getenv("MODEL_PRESET", "phi3")
+EMBED_MODEL = os.getenv("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
+# bge models want a short instruction prefix on the QUERY (not the docs) for
+# best retrieval. Auto-apply for bge; override or disable via QUERY_PREFIX.
+QUERY_PREFIX = os.getenv(
+    "QUERY_PREFIX",
+    "Represent this sentence for searching relevant passages: "
+    if "bge" in EMBED_MODEL.lower()
+    else "",
+)
 # ─────────────────────────────────────────────────────────────
 
 app = FastAPI()
 
-print("[startup] Loading embedding model...")
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
+PRESET = get_preset(MODEL_PRESET)
+
+print(f"[startup] Loading embedding model {EMBED_MODEL} ...")
+embedder = SentenceTransformer(EMBED_MODEL)
 
 print("[startup] Connecting to ChromaDB...")
 chroma_client = chromadb.PersistentClient(path=CHROMA_PATH)
@@ -59,18 +72,7 @@ async def retrieve_context(embedding: list[float]) -> str:
 
 
 def build_prompt(query: str, context: str) -> str:
-    return f"""<|user|>
-You are a helpful assistant for {COLLEGE_NAME}.
-Answer ONLY using the context below.
-If the answer is not in the context, say "I don't have that information."
-
-Context:
-{context}
-
-Question: {query}
-<|end|>
-<|assistant|>
-"""
+    return PRESET["build"](COLLEGE_NAME, context, query)
 
 
 async def stream_from_cache(cached_response: str):
@@ -91,7 +93,7 @@ async def chat(req: ChatRequest, request: Request):
     cancel_key = f"cancel:{session_id}"
 
     # 1. Embed query (thread pool — CPU-bound, must not block event loop)
-    raw = await asyncio.to_thread(embedder.encode, [req.query])
+    raw = await asyncio.to_thread(embedder.encode, [QUERY_PREFIX + req.query])
     embedding = raw.tolist()[0]
 
     # 2. Semantic cache check
