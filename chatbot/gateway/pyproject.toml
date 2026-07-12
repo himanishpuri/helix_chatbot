@@ -10,7 +10,6 @@ dependencies = [
     "sentence-transformers",
     "redis",
     "numpy",
-    "sse-starlette",
     "black>=26.3.1",
 ]
 

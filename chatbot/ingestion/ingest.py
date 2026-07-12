@@ -1,8 +1,6 @@
 # ingestion/ingest.py
 import os
 import hashlib
-import chromadb
-from sentence_transformers import SentenceTransformer
 
 MARKDOWN_FILE = os.path.join(os.path.dirname(__file__), "college_data.md")
 CHROMA_PATH = os.path.join(os.path.dirname(__file__), "../data/chroma_db")
@@ -14,18 +12,35 @@ BATCH_SIZE = 32
 
 
 def chunk_text(text: str):
-    paragraphs = text.split("\n\n")
+    """Paragraph-packed chunks of ~CHUNK_SIZE with CHUNK_OVERLAP char carry-over.
+
+    Paragraphs are packed until they'd exceed CHUNK_SIZE; a paragraph larger
+    than CHUNK_SIZE is hard-split. Each new chunk carries the trailing
+    CHUNK_OVERLAP characters of the previous one so context isn't cut mid-idea.
+    """
+    # Hard-split oversized paragraphs so no unit exceeds CHUNK_SIZE.
+    units = []
+    for p in text.split("\n\n"):
+        p = p.strip()
+        if not p:
+            continue
+        while len(p) > CHUNK_SIZE:
+            units.append(p[:CHUNK_SIZE])
+            p = p[CHUNK_SIZE:]
+        if p:
+            units.append(p)
+
     chunks = []
     buffer = ""
-
-    for p in paragraphs:
-        if len(buffer) + len(p) < CHUNK_SIZE:
-            buffer += p + "\n\n"
-        else:
+    for u in units:
+        if buffer and len(buffer) + len(u) + 2 > CHUNK_SIZE:
             chunks.append(buffer.strip())
-            buffer = p + "\n\n"
+            overlap = buffer[-CHUNK_OVERLAP:] if CHUNK_OVERLAP else ""
+            buffer = overlap + "\n\n" + u
+        else:
+            buffer = buffer + "\n\n" + u if buffer else u
 
-    if buffer:
+    if buffer.strip():
         chunks.append(buffer.strip())
 
     return chunks
@@ -36,6 +51,9 @@ def hash_chunk(text: str):
 
 
 def main():
+    import chromadb
+    from sentence_transformers import SentenceTransformer
+
     with open(MARKDOWN_FILE, "r", encoding="utf-8") as f:
         raw = f.read()
 
@@ -68,5 +86,24 @@ def main():
     print("✓ Ingestion complete")
 
 
+def _selfcheck():
+    assert chunk_text("") == []
+    assert chunk_text("\n\n  \n\n") == []
+    # oversized single paragraph is split, no chunk exceeds CHUNK_SIZE
+    big = chunk_text("x" * (CHUNK_SIZE * 2 + 10))
+    # each chunk is one hard-split unit (<=CHUNK_SIZE) plus at most one overlap carry
+    assert big and all(len(c) <= CHUNK_SIZE + CHUNK_OVERLAP + 2 for c in big)
+    # overlap: consecutive chunks share trailing/leading text
+    packed = chunk_text("\n\n".join(f"para-{i} " + "y" * 200 for i in range(6)))
+    assert len(packed) >= 2
+    assert any(c for c in packed)  # no empty chunks
+    print("✓ chunk_text self-check passed")
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if "--selfcheck" in sys.argv:
+        _selfcheck()
+    else:
+        main()

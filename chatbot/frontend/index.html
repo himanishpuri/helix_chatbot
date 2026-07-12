@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Helix Chatbot</title>
+    <style>
+      :root {
+        --bg: #0f1116;
+        --panel: #171a21;
+        --user: #2563eb;
+        --bot: #262b36;
+        --text: #e6e8ec;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        height: 100vh;
+        display: flex;
+      }
+      #app {
+        margin: auto;
+        width: min(720px, 100%);
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      header {
+        padding: 16px 20px;
+        font-weight: 600;
+        border-bottom: 1px solid #222;
+      }
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .msg {
+        padding: 10px 14px;
+        border-radius: 12px;
+        max-width: 80%;
+        white-space: pre-wrap;
+        line-height: 1.45;
+      }
+      .user {
+        background: var(--user);
+        align-self: flex-end;
+      }
+      .bot {
+        background: var(--bot);
+        align-self: flex-start;
+      }
+      form {
+        display: flex;
+        gap: 8px;
+        padding: 16px;
+        border-top: 1px solid #222;
+      }
+      input {
+        flex: 1;
+        padding: 12px;
+        border-radius: 10px;
+        border: 1px solid #333;
+        background: var(--panel);
+        color: var(--text);
+        font-size: 15px;
+      }
+      button {
+        padding: 12px 18px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--user);
+        color: #fff;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <header>Helix Chatbot</header>
+      <div id="log"></div>
+      <form id="f">
+        <input
+          id="q"
+          placeholder="Ask a question…"
+          autocomplete="off"
+          required
+        />
+        <button id="send" type="submit">Send</button>
+      </form>
+    </div>
+
+    <script>
+      const log = document.getElementById("log");
+      const form = document.getElementById("f");
+      const input = document.getElementById("q");
+      const send = document.getElementById("send");
+
+      function bubble(cls, text = "") {
+        const el = document.createElement("div");
+        el.className = "msg " + cls;
+        el.textContent = text;
+        log.appendChild(el);
+        log.scrollTop = log.scrollHeight;
+        return el;
+      }
+
+      // Extract `data:` payloads from one SSE event block.
+      function* frames(block) {
+        for (const line of block.split("\n")) {
+          if (line.startsWith("data: ")) yield line.slice(6);
+        }
+      }
+
+      async function ask(query) {
+        bubble("user", query);
+        const out = bubble("bot", "");
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query }),
+        });
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let idx;
+          while ((idx = buf.indexOf("\n\n")) !== -1) {
+            const block = buf.slice(0, idx);
+            buf = buf.slice(idx + 2);
+            for (const data of frames(block)) {
+              if (data === "[DONE]") return;
+              try {
+                out.textContent += JSON.parse(data).token ?? "";
+              } catch {}
+              log.scrollTop = log.scrollHeight;
+            }
+          }
+        }
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const query = input.value.trim();
+        if (!query) return;
+        input.value = "";
+        send.disabled = input.disabled = true;
+        try {
+          await ask(query);
+        } catch (err) {
+          bubble("bot", "⚠️ " + err.message);
+        } finally {
+          send.disabled = input.disabled = false;
+          input.focus();
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -22,7 +22,7 @@ services:
       - LLAMA_URL=http://host.docker.internal:8080/completion
       - CHROMA_PATH=/app/data/chroma_db
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:ro # gateway only reads the vector store
       # deploy:
   # replicas: 3 # not needed rn
   # uncomment these when we need to scale this is taking too much time to build

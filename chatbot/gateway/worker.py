@@ -10,15 +10,22 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 QUEUE_KEY = "inference_queue"
 LLAMA_URL = os.getenv("LLAMA_URL", "http://localhost:8080/completion")
 NUM_WORKERS = 8
+CANCEL_CHECK_EVERY = 8  # tokens between cancel-flag checks
 
 redis_client = aioredis.Redis(host=REDIS_HOST, port=REDIS_PORT, decode_responses=True)
 
 
 async def process_job(job: dict):
-    """Call llama-server, stream tokens to Redis pub/sub channel."""
+    """Call llama-server, stream tokens to the Redis pub/sub channel.
+
+    Always publishes a terminal `[DONE]` (success, error, or cancel) so the
+    gateway's stream generator can't hang waiting for a sentinel llama.cpp's
+    /completion endpoint never sends.
+    """
     session_id = job["session_id"]
     prompt = job["prompt"]
     channel = f"response:{session_id}"
+    cancel_key = f"cancel:{session_id}"
 
     payload = {
         "prompt": prompt,
@@ -29,25 +36,39 @@ async def process_job(job: dict):
     }
 
     try:
+        if await redis_client.exists(cancel_key):
+            return  # client already gone; skip inference entirely
+
         async with httpx.AsyncClient(timeout=120) as client:
             async with client.stream("POST", LLAMA_URL, json=payload) as response:
+                seen = 0
                 async for line in response.aiter_lines():
-                    if line.startswith("data: "):
-                        raw = line[6:]
-                        if raw.strip() == "[DONE]":
-                            await redis_client.publish(channel, "[DONE]")
-                            return
-                        try:
-                            data = json.loads(raw)
-                            token = data.get("content", "")
-                            if token:
-                                await redis_client.publish(
-                                    channel, json.dumps({"token": token})
-                                )
-                        except json.JSONDecodeError:
-                            continue
+                    if not line.startswith("data: "):
+                        continue
+                    raw = line[6:]
+                    if raw.strip() == "[DONE]":  # OpenAI-compat servers
+                        return
+                    try:
+                        data = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    token = data.get("content", "")
+                    if token:
+                        await redis_client.publish(
+                            channel, json.dumps({"token": token})
+                        )
+                        seen += 1
+                        if seen % CANCEL_CHECK_EVERY == 0 and await redis_client.exists(
+                            cancel_key
+                        ):
+                            print(f"[worker] cancelled session={session_id}")
+                            return  # abort: exiting closes the llama.cpp stream
+                    if data.get("stop") is True:  # llama.cpp /completion terminator
+                        return
     except Exception as e:
         await redis_client.publish(channel, json.dumps({"error": str(e)}))
+    finally:
+        # End of stream / stop / cancel / error all converge here.
         await redis_client.publish(channel, "[DONE]")
 
 

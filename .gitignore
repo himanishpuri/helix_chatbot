@@ -1,5 +1,8 @@
 llama.cpp/
+.env
 .claude
-CLAUDE.md
+.serena/
 __pycache__/
+.pytest_cache/
+.venv/
 chatbot/data

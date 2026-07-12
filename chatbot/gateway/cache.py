@@ -24,12 +24,18 @@ def get_redis() -> aioredis.Redis:
 
 def _cosine_similarity(a: list[float], b: list[float]) -> float:
     a, b = np.array(a), np.array(b)
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+    denom = np.linalg.norm(a) * np.linalg.norm(b)
+    if denom == 0:
+        return 0.0
+    return float(np.dot(a, b) / denom)
 
 
 async def get_cached(query_embedding: list[float]) -> str | None:
-    """Search all cached embeddings for a near match. Returns response text or None."""
+    """Return the most similar cached response above threshold, else None."""
     r = get_redis()
+    best_sim = SIMILARITY_THRESHOLD
+    best_key = None
+    best_response = None
     async for key in r.scan_iter("cache:*"):
         entry = await r.hgetall(key)
         if not entry:
@@ -37,24 +43,29 @@ async def get_cached(query_embedding: list[float]) -> str | None:
         try:
             stored_embedding = json.loads(entry["embedding"])
             similarity = _cosine_similarity(query_embedding, stored_embedding)
-            if similarity >= SIMILARITY_THRESHOLD:
-                # Refresh TTL on hit so popular questions stay cached
-                await r.expire(key, CACHE_TTL)
-                return entry["response"]
         except (KeyError, json.JSONDecodeError):
             continue
+        if similarity >= best_sim:
+            best_sim, best_key, best_response = similarity, key, entry["response"]
+
+    if best_key is not None:
+        # Refresh TTL on hit so popular questions stay cached
+        await r.expire(best_key, CACHE_TTL)
+        return best_response
     return None
 
 
 async def set_cache(query_embedding: list[float], response_text: str) -> None:
-    """Store embedding + response in Redis."""
+    """Store embedding + response atomically with a TTL."""
     r = get_redis()
     key = f"cache:{uuid.uuid4()}"
-    await r.hset(
-        key,
-        mapping={
-            "embedding": json.dumps(query_embedding),
-            "response": response_text,
-        },
-    )
-    await r.expire(key, CACHE_TTL)
+    async with r.pipeline(transaction=True) as pipe:
+        pipe.hset(
+            key,
+            mapping={
+                "embedding": json.dumps(query_embedding),
+                "response": response_text,
+            },
+        )
+        pipe.expire(key, CACHE_TTL)
+        await pipe.execute()
