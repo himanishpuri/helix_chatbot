@@ -62,7 +62,7 @@ sequenceDiagram
     R-->>G: [DONE]
     G->>R: cache full response
     G-->>B: SSE [DONE]
-    Note over B,W: if B disconnects, G sets cancel:{sid};<br/>W sees it between tokens and aborts L
+    Note over B,W: on disconnect, G sets a cancel flag and W aborts L between tokens
 ```
 
 ---
