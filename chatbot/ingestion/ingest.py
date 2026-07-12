@@ -3,7 +3,9 @@ import os
 import hashlib
 
 MARKDOWN_FILE = os.path.join(os.path.dirname(__file__), "college_data.md")
-CHROMA_PATH = os.path.join(os.path.dirname(__file__), "../data/chroma_db")
+CHROMA_PATH = os.getenv(
+    "CHROMA_PATH", os.path.join(os.path.dirname(__file__), "../data/chroma_db")
+)
 COLLECTION = "college_kb"
 
 CHUNK_SIZE = 500

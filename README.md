@@ -132,7 +132,14 @@ uv sync            # installs chromadb + sentence-transformers
 uv run python ingest.py
 ```
 
-This writes the vector database to `chatbot/data/chroma_db/`, which is mounted read-only into the gateway container.
+This writes the vector database to `chatbot/data/chroma_db/`, which is mounted into the gateway and worker containers.
+
+You can also run ingestion in a container (no host Python needed):
+
+```bash
+cd chatbot
+docker compose --profile ingest run --rm ingest
+```
 
 ### 3. Start all services
 

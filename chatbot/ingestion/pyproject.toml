@@ -1,7 +1,22 @@
 [project]
 name = "ingestion"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
+description = "RAG ingestion: chunk, embed, and load the knowledge base into ChromaDB"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "chromadb",
+    "sentence-transformers",
+    "torch",
+]
+
+[tool.uv]
+package = false
+
+# CPU-only torch — no CUDA/nvidia payload (~700MB smaller image).
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

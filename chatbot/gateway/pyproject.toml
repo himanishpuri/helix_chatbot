@@ -8,10 +8,22 @@ dependencies = [
     "httpx",
     "chromadb",
     "sentence-transformers",
+    "torch",
     "redis",
     "numpy",
-    "black>=26.3.1",
 ]
+
+[dependency-groups]
+dev = ["black>=26.3.1"]
 
 [tool.uv]
 package = false
+
+# CPU-only torch — no CUDA/nvidia payload (~700MB smaller image).
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

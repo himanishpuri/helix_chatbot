@@ -1,7 +1,22 @@
+x-app-image: &app-image
+  build:
+    context: ./gateway
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  extra_hosts:
+    - "host.docker.internal:host-gateway" # llama.cpp on the host (Linux needs this)
+  depends_on:
+    redis:
+      condition: service_healthy
+
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - redis_data:/data
     healthcheck:
@@ -9,41 +24,28 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
   gateway:
-    build:
-      context: ./gateway
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
+    <<: *app-image
     environment:
       - REDIS_HOST=redis
       - LLAMA_URL=http://host.docker.internal:8080/completion
       - CHROMA_PATH=/app/data/chroma_db
     volumes:
-      - ./data:/app/data:ro # gateway only reads the vector store
-      # deploy:
-  # replicas: 3 # not needed rn
-  # uncomment these when we need to scale this is taking too much time to build
+      - ./data:/app/data # ChromaDB opens sqlite in WAL mode, so it needs write access
 
   worker:
-    build:
-      context: ./gateway
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    depends_on:
-      redis:
-        condition: service_healthy
+    <<: *app-image
     environment:
       - REDIS_HOST=redis
       - LLAMA_URL=http://host.docker.internal:8080/completion
-    volumes:
-      - ./data:/app/data
-    command: python worker.py
+    command: python worker.py # worker talks only to Redis + llama.cpp; no data mount
+
   nginx:
-    image: nginx:alpine
+    image: nginx:1.27-alpine
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     depends_on:
       - gateway
     ports:
@@ -51,5 +53,18 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./frontend:/usr/share/nginx/html:ro
+
+  # One-shot ingestion. Not started by `up`; run explicitly:
+  #   docker compose --profile ingest run --rm ingest
+  ingest:
+    profiles: ["ingest"]
+    build:
+      context: ./ingestion
+      dockerfile: Dockerfile
+    environment:
+      - CHROMA_PATH=/app/data/chroma_db
+    volumes:
+      - ./data:/app/data # writable: this is what populates the store
+
 volumes:
   redis_data:
