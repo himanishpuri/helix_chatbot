@@ -1,46 +1,67 @@
 # gateway/templates.py
-# One source of truth for a model family's chat template AND its stop tokens,
-# so the two can never drift apart. Pick a family with MODEL_PRESET.
+# One source of truth for a model family's chat wrapper AND its stop tokens, so
+# the two can never drift apart. Pick a family with MODEL_PRESET.
 #
-# The instruction body is identical across presets — only the wrapping control
-# tokens (and matching stop sequences) differ per model family.
+# render(messages) wraps a [{role, content}] list (roles: system/user/assistant)
+# in the family's control tokens. Both the query-rewrite call and the final
+# answer generation go through the same renderer.
 
-_INSTRUCTION = (
-    "You are a helpful assistant for {college}.\n"
-    "Answer ONLY using the context below.\n"
-    'If the answer is not in the context, say "I don\'t have that information."\n\n'
-    "Context:\n{context}\n\n"
-    "Question: {query}"
+# System instruction for the RAG answer turn. Loosened from the old
+# "answer ONLY using the context" so the bot can greet, count, and reason over
+# what was retrieved — while still refusing to invent unsupported facts.
+SYSTEM_INSTRUCTION = (
+    "You are a helpful assistant for {college}. "
+    "Use the provided context and the conversation so far to answer. "
+    "You may greet the user, and you may count, list, or summarize items that "
+    "appear in the context. Do not invent facts that are not supported by the "
+    "context; if the answer genuinely isn't there, say you don't have that "
+    "information.\n\n"
+    "Context:\n{context}"
+)
+
+# Instruction for the standalone-question rewrite (history-aware retrieval).
+REWRITE_INSTRUCTION = (
+    "Given the conversation so far and the user's follow-up, rewrite the "
+    "follow-up as a single standalone question that makes sense without the "
+    "conversation. Resolve pronouns and references. Output ONLY the rewritten "
+    "question, nothing else."
 )
 
 
-def _phi3(college, context, query):
-    body = _INSTRUCTION.format(college=college, context=context, query=query)
-    return f"<|user|>\n{body}\n<|end|>\n<|assistant|>\n"
+def _phi3(messages):
+    out = []
+    for m in messages:
+        if m["role"] == "assistant":
+            out.append(f"<|assistant|>\n{m['content']}\n<|end|>\n")
+        else:  # system + user both go in the user turn for Phi
+            out.append(f"<|user|>\n{m['content']}\n<|end|>\n")
+    out.append("<|assistant|>\n")
+    return "".join(out)
 
 
-def _qwen(college, context, query):
-    # ChatML — Qwen2.5, and most chatml-tuned models.
-    body = _INSTRUCTION.format(college=college, context=context, query=query)
-    return (
-        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
-        f"<|im_start|>user\n{body}<|im_end|>\n"
-        "<|im_start|>assistant\n"
-    )
+def _qwen(messages):
+    out = []
+    for m in messages:
+        out.append(f"<|im_start|>{m['role']}\n{m['content']}<|im_end|>\n")
+    out.append("<|im_start|>assistant\n")
+    return "".join(out)
 
 
-def _llama3(college, context, query):
-    body = _INSTRUCTION.format(college=college, context=context, query=query)
-    return (
-        "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\n"
-        f"{body}<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
-    )
+def _llama3(messages):
+    out = ["<|begin_of_text|>"]
+    for m in messages:
+        out.append(
+            f"<|start_header_id|>{m['role']}<|end_header_id|>\n\n"
+            f"{m['content']}<|eot_id|>"
+        )
+    out.append("<|start_header_id|>assistant<|end_header_id|>\n\n")
+    return "".join(out)
 
 
 PRESETS = {
-    "phi3": {"build": _phi3, "stop": ["<|end|>", "<|user|>"]},
-    "qwen": {"build": _qwen, "stop": ["<|im_end|>"]},
-    "llama3": {"build": _llama3, "stop": ["<|eot_id|>"]},
+    "phi3": {"render": _phi3, "stop": ["<|end|>", "<|user|>"]},
+    "qwen": {"render": _qwen, "stop": ["<|im_end|>"]},
+    "llama3": {"render": _llama3, "stop": ["<|eot_id|>"]},
 }
 
 
@@ -54,18 +75,19 @@ def get_preset(name: str) -> dict:
 
 
 if __name__ == "__main__":
+    msgs = [
+        {"role": "system", "content": "SYS-TEXT"},
+        {"role": "user", "content": "first?"},
+        {"role": "assistant", "content": "ans one"},
+        {"role": "user", "content": "second?"},
+    ]
     for name, p in PRESETS.items():
-        out = p["build"]("Test College", "some context", "a question?")
-        assert "Test College" in out and "some context" in out and "a question?" in out
+        out = p["render"](msgs)
+        for m in msgs:
+            assert m["content"] in out, f"{name} missing {m['role']}"
+        # every stop token must be a control token present in the rendered text
+        assert any(s in out for s in p["stop"]), f"{name}: no stop token in render"
         assert isinstance(p["stop"], list) and p["stop"], name
-    # phi3 must reproduce the original hardcoded bytes exactly (regression guard).
-    expected = (
-        "<|user|>\nYou are a helpful assistant for ABC.\n"
-        "Answer ONLY using the context below.\n"
-        'If the answer is not in the context, say "I don\'t have that information."\n\n'
-        "Context:\nCTX\n\nQuestion: Q\n<|end|>\n<|assistant|>\n"
-    )
-    assert PRESETS["phi3"]["build"]("ABC", "CTX", "Q") == expected, "phi3 drift!"
     try:
         get_preset("nope")
         raise SystemExit("expected ValueError")

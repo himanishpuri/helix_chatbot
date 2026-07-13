@@ -114,6 +114,10 @@
       const input = document.getElementById("q");
       const send = document.getElementById("send");
 
+      // One conversation per page load — lets the backend remember context.
+      const conversationId =
+        (crypto.randomUUID && crypto.randomUUID()) || String(Date.now());
+
       function bubble(cls, text = "") {
         const el = document.createElement("div");
         el.className = "msg " + cls;
@@ -136,8 +140,12 @@
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query }),
+          body: JSON.stringify({ query, conversation_id: conversationId }),
         });
+        if (!res.ok) {
+          out.textContent = `⚠️ Server error (${res.status})`;
+          return;
+        }
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buf = "";
