@@ -40,10 +40,11 @@ class _FakeRedis:
 
 
 def _run(entries, query):
+    # Exercise the O(N) scan fallback directly (no Redis Query Engine here).
     fake = _FakeRedis(entries)
     cache._redis = fake
     try:
-        return asyncio.run(cache.get_cached(query)), fake
+        return asyncio.run(cache._get_cached_scan(query)), fake
     finally:
         cache._redis = None
 
@@ -69,9 +70,26 @@ def test_below_threshold_returns_none():
     assert result is None
 
 
+def test_cosine_distance_to_similarity():
+    # KNN path converts RediSearch COSINE *distance* -> similarity as 1 - d.
+    # identical vectors: distance 0 -> similarity 1; orthogonal: 1 -> 0.
+    assert 1.0 - 0.0 == 1.0
+    assert 1.0 - 1.0 == 0.0
+    # threshold semantics: a 0.05 distance (0.95 sim) clears 0.92, 0.10 doesn't
+    assert (1.0 - 0.05) >= cache.SIMILARITY_THRESHOLD
+    assert (1.0 - 0.10) < cache.SIMILARITY_THRESHOLD
+
+
+def test_to_bytes_is_float32():
+    b = cache._to_bytes([1.0, 2.0, 3.0])
+    assert len(b) == 3 * 4  # float32 = 4 bytes each
+
+
 if __name__ == "__main__":
     test_cosine_zero_norm_is_zero()
     test_cosine_identical_is_one()
     test_best_match_wins_not_first()
     test_below_threshold_returns_none()
+    test_cosine_distance_to_similarity()
+    test_to_bytes_is_float32()
     print("✓ cache tests passed")

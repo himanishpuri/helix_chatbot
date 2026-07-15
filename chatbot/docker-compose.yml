@@ -13,7 +13,7 @@ x-app-image: &app-image
 
 services:
   redis:
-    image: redis:7.4-alpine
+    image: redis:8 # Redis 8 bundles the Query Engine (FT.*) for vector KNN
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true

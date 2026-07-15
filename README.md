@@ -1,5 +1,7 @@
 # Helix Chatbot
 
+[![CI](https://github.com/himanishpuri/helix_chatbot/actions/workflows/ci.yml/badge.svg)](https://github.com/himanishpuri/helix_chatbot/actions/workflows/ci.yml)
+
 A RAG (Retrieval-Augmented Generation) chatbot that runs entirely on local hardware. Queries a college knowledge base using ChromaDB for semantic search, caches responses in Redis to avoid redundant inference, and streams tokens back to the client in real time via Server-Sent Events.
 
 ---
@@ -9,7 +11,7 @@ A RAG (Retrieval-Augmented Generation) chatbot that runs entirely on local hardw
 - **Retrieval-Augmented Generation** — embeds each query with `bge-small-en-v1.5` (swap via `EMBED_MODEL`), retrieves the top-3 most relevant chunks from ChromaDB, and injects them into the prompt so the model answers only from verified knowledge.
 - **Conversational memory** — turns are stored per `conversation_id` in Redis (`conv:{id}`, trimmed to the last `MAX_HISTORY_MSGS`, 1-hour TTL). A follow-up like _"when is it?"_ is first rewritten into a standalone question (_"when is HELIX?"_) by a short LLM call, so retrieval and caching key off the real intent; the prior turns are also fed into the answer prompt so pronouns resolve during generation.
 - **Swappable model presets** — the chat template and stop tokens for the LLM live in one place (`gateway/templates.py`) keyed by family (`phi3`, `qwen`, `llama3`). Point llama.cpp at a different GGUF and match it with a one-word `MODEL_PRESET` change — no code edit.
-- **Semantic cache** — before hitting the inference stack, every query is compared against cached embeddings in Redis by cosine similarity. The closest match at ≥ 0.92 similarity returns the cached answer instantly, with its 7-day TTL refreshed on hit.
+- **Semantic cache (vector KNN)** — before hitting the inference stack, the query embedding runs a `KNN 1` search over a Redis vector index (`FT.SEARCH`, HNSW/cosine) — approximate nearest-neighbour, ~O(log N) instead of scanning every entry. A match at ≥ 0.92 similarity returns the cached answer instantly (7-day TTL, refreshed on hit). If the Redis Query Engine isn't present, it degrades gracefully to a linear cosine scan.
 - **Local LLM inference** — delegates generation to a llama.cpp server running on the host. No external API calls, no data leaves the machine.
 - **Async worker pool** — 8 async workers dequeue jobs from a Redis list and call llama.cpp in parallel, keeping latency low under concurrent load.
 - **Real-time token streaming** — workers publish tokens to a Redis pub/sub channel; the gateway forwards them to the browser as Server-Sent Events the moment they arrive.
@@ -81,7 +83,7 @@ sequenceDiagram
 | Reverse proxy    | Nginx (Alpine)                                                   |
 | Embeddings       | `sentence-transformers` — `bge-small-en-v1.5` (env-configurable) |
 | Vector store     | ChromaDB (persistent, cosine metric)                             |
-| Cache & queue    | Redis 7                                                          |
+| Cache & queue    | Redis 8 (Query Engine for vector KNN)                            |
 | LLM inference    | llama.cpp (`llama-server`)                                       |
 | HTTP client      | httpx (async)                                                    |
 | Streaming        | Server-Sent Events via FastAPI `StreamingResponse`               |
@@ -92,7 +94,8 @@ sequenceDiagram
 ## Design Decisions
 
 - **Redis pub/sub for streaming, not direct gateway→llama.cpp.** Decoupling the gateway from inference via a queue + pub/sub means the web tier stays responsive and stateless: workers can be scaled independently, and a slow model never ties up an HTTP worker thread. The gateway subscribes _before_ enqueuing the job so no leading tokens are lost to the pub/sub's no-backlog semantics.
-- **Semantic cache threshold of 0.92.** High enough that only genuine paraphrases hit (avoiding wrong-answer reuse), low enough to catch "what courses are offered" vs "which courses do you offer". Below it, the query goes to full RAG + inference. The cache returns the _best_ match above threshold, not the first found.
+- **Semantic cache threshold of 0.92.** High enough that only genuine paraphrases hit (avoiding wrong-answer reuse), low enough to catch "what courses are offered" vs "which courses do you offer". Below it, the query goes to full RAG + inference.
+- **Vector KNN for the cache, with a scan fallback.** The cache lookup is a Redis vector `KNN 1` search (HNSW, cosine) — approximate nearest-neighbour in ~O(log N), so it stays fast as the cache grows instead of the naive O(N) scan of comparing every stored embedding. It needs the Redis Query Engine (bundled in `redis:8`); if that's absent the code falls back to the linear scan, so the gateway boots against any Redis and simply uses whichever backend is available. The KB retrieval in ChromaDB is likewise ANN (HNSW).
 - **Query rewrite over naive history-prepend.** For follow-ups, condensing the conversation into one standalone question (via a short, deterministic LLM call) keeps two things clean that prepending raw history would muddy: retrieval embeds a focused question instead of a blob of prior turns, and the semantic cache keys on intent — "when is it?" and "when is HELIX?" resolve to the same cached answer. The rewrite is skipped entirely on the first turn.
 - **Local llama.cpp inference.** Keeps student/college data on-machine, removes per-token API cost, and makes the whole stack runnable on a laptop with a single GGUF file.
 - **`bge-small-en-v1.5` embedder.** Same 384 dimensions and inference cost as the old `all-MiniLM-L6-v2` but noticeably stronger retrieval on the MTEB benchmarks. bge models are trained to embed a _query_ with a short instruction prefix (applied automatically at query time, never to the stored documents), which lifts retrieval further at zero extra cost.

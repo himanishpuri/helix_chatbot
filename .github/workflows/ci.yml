@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Only the deps the pure-logic tests touch — no torch/chromadb, so this
+      # stays fast. The streaming/RAG E2E path needs Redis + a GGUF model and
+      # is verified manually, not in CI.
+      - name: Install test deps
+        run: pip install numpy redis
+      - name: Template presets (render + stop tokens)
+        run: python chatbot/gateway/test_templates.py
+      - name: Semantic cache (best-match + cosine guard)
+        run: python chatbot/gateway/test_cache.py
+      - name: Chunking self-check (overlap + edge cases)
+        run: python chatbot/ingestion/ingest.py --selfcheck
