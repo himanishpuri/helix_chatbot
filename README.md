@@ -106,13 +106,14 @@ sequenceDiagram
 
 ## Performance
 
-Measured numbers depend heavily on the host GPU/CPU and the chosen GGUF model, so they're not baked in here. The architecture's design targets:
+Inference latency depends on the host GPU/CPU and the chosen GGUF, so those numbers aren't baked in here. The cache-lookup cost below _is_ measured (it's model-independent); the rest are architectural targets:
 
-- **Cache hits** return in a few ms (Redis lookup + local cosine scan) versus full-model latency on a miss.
+- **Cache lookup** is a single Redis vector `KNN 1` query. Measured on a local `redis:8` with random 384-dim vectors (`gateway/bench_cache.py`, median of 50 lookups): **0.6 ms at 100 entries, 1.8 ms at 2000** — roughly flat. The O(N) scan fallback over the same data is **40 ms / 809 ms** respectively (it grows ~linearly, ~0.4 ms per stored entry). Miss latency is full-model inference — hardware/model-dependent, so not quantified here.
+- The cache-_hit_ stream to the browser is deliberately paced at ~10 ms/token (`stream_from_cache`, `main.py:150-156`) so a replayed answer renders like a live one; the real win is skipping inference, not shaving the round-trip.
 - **8 concurrent workers** let independent queries generate in parallel rather than serialising on a single llama.cpp connection.
 - **Cancellation on disconnect** reclaims a worker within ~`CANCEL_CHECK_EVERY` (8) tokens of the client leaving.
 
-> Populate this section with real numbers from your hardware: single-query latency, tokens/sec, cache-hit latency, and throughput under N concurrent clients.
+> Still worth adding from your own hardware: single-query miss latency, tokens/sec, and throughput under N concurrent clients.
 
 ---
 
@@ -303,7 +304,7 @@ chatbot/
 ├── docker-compose.yml        — orchestrates Redis, Gateway, Worker, Nginx
 ├── gateway/
 │   ├── main.py               — FastAPI app; /chat (SSE), memory + query-rewrite, /health
-│   ├── cache.py              — semantic cache: scan + best-match cosine + atomic set
+│   ├── cache.py              — semantic cache: Redis vector KNN, O(N) cosine-scan fallback
 │   ├── worker.py             — dequeues jobs, streams llama.cpp, publishes tokens, honours cancel
 │   ├── templates.py          — per-family chat template + stop tokens (MODEL_PRESET)
 │   ├── test_cache.py         — cache unit checks (no Redis)
